@@ -15,7 +15,7 @@ import (
 )
 
 // InsertOrUpdate insert one or more beans
-func (session *Session) InsertOrUpdate(beans ...interface{}) (int64, error) {
+func (session *Session) InsertOrUpdate(updateCols []string, beans ...interface{}) (int64, error) {
 	var affected int64
 	var err error
 
@@ -29,14 +29,14 @@ func (session *Session) InsertOrUpdate(beans ...interface{}) (int64, error) {
 			size := sliceValue.Len()
 			if size > 0 {
 				if session.engine.SupportInsertMany() {
-					cnt, err := session.innerInsertOrUpdateMulti(bean)
+					cnt, err := session.innerInsertOrUpdateMulti(updateCols, bean)
 					if err != nil {
 						return affected, err
 					}
 					affected += cnt
 				} else {
 					for i := 0; i < size; i++ {
-						cnt, err := session.innerInsertOrUpdate(sliceValue.Index(i).Interface())
+						cnt, err := session.innerInsertOrUpdate(updateCols, sliceValue.Index(i).Interface())
 						if err != nil {
 							return affected, err
 						}
@@ -45,7 +45,7 @@ func (session *Session) InsertOrUpdate(beans ...interface{}) (int64, error) {
 				}
 			}
 		} else {
-			cnt, err := session.innerInsertOrUpdate(bean)
+			cnt, err := session.innerInsertOrUpdate(updateCols, bean)
 			if err != nil {
 				return affected, err
 			}
@@ -56,7 +56,7 @@ func (session *Session) InsertOrUpdate(beans ...interface{}) (int64, error) {
 	return affected, err
 }
 
-func (session *Session) innerInsertOrUpdateMulti(rowsSlicePtr interface{}) (int64, error) {
+func (session *Session) innerInsertOrUpdateMulti(updateCols []string, rowsSlicePtr interface{}) (int64, error) {
 	sliceValue := reflect.Indirect(reflect.ValueOf(rowsSlicePtr))
 	if sliceValue.Kind() != reflect.Slice {
 		return 0, errors.New("needs a pointer to a slice")
@@ -206,6 +206,13 @@ func (session *Session) innerInsertOrUpdateMulti(rowsSlicePtr interface{}) (int6
 	}
 	cleanupProcessorsClosures(&session.beforeClosures)
 
+	if len(updateCols) > 0 {
+		updates = make([]string, len(updateCols))
+		for _, col := range updateCols  {
+			updates = append(updates, fmt.Sprintf("%s=values(%s)", col, col))
+		}
+	}
+
 	var sql string
 	if session.engine.dialect.DBType() == core.ORACLE {
 		temp := fmt.Sprintf(") INTO %s (%v%v%v) VALUES (",
@@ -279,7 +286,7 @@ func (session *Session) innerInsertOrUpdateMulti(rowsSlicePtr interface{}) (int6
 }
 
 // InsertOrUpdateMulti insert multiple records
-func (session *Session) InsertOrUpdateMulti(rowsSlicePtr interface{}) (int64, error) {
+func (session *Session) InsertOrUpdateMulti(updateCols []string, rowsSlicePtr interface{}) (int64, error) {
 	if session.isAutoClose {
 		defer session.Close()
 	}
@@ -294,10 +301,10 @@ func (session *Session) InsertOrUpdateMulti(rowsSlicePtr interface{}) (int64, er
 		return 0, nil
 	}
 
-	return session.innerInsertOrUpdateMulti(rowsSlicePtr)
+	return session.innerInsertOrUpdateMulti(updateCols, rowsSlicePtr)
 }
 
-func (session *Session) innerInsertOrUpdate(bean interface{}) (int64, error) {
+func (session *Session) innerInsertOrUpdate(updateCols []string, bean interface{}) (int64, error) {
 	if err := session.statement.setRefBean(bean); err != nil {
 		return 0, err
 	}
@@ -347,8 +354,14 @@ func (session *Session) innerInsertOrUpdate(bean interface{}) (int64, error) {
 		}
 	}
 	var updates []string
-	for _, colName := range colNames {
-		updates = append(updates, fmt.Sprintf("%s=values(%s)", colName, colName))
+	if len(updateCols) > 0 {
+		for _, col := range updateCols  {
+			updates = append(updates, fmt.Sprintf("%s=values(%s)", col, col))
+		}
+	} else {
+		for _, colName := range colNames {
+			updates = append(updates, fmt.Sprintf("%s=values(%s)", colName, colName))
+		}
 	}
 
 	var sqlStr string
@@ -541,12 +554,12 @@ func (session *Session) innerInsertOrUpdate(bean interface{}) (int64, error) {
 // InsertOrUpdateOne insert only one struct into database as a record.
 // The in parameter bean must a struct or a point to struct. The return
 // parameter is inserted and error
-func (session *Session) InsertOrUpdateOne(bean interface{}) (int64, error) {
+func (session *Session) InsertOrUpdateOne(updateCols []string, bean interface{}) (int64, error) {
 	if session.isAutoClose {
 		defer session.Close()
 	}
 
-	return session.innerInsertOrUpdate(bean)
+	return session.innerInsertOrUpdate(updateCols, bean)
 }
 
 func (session *Session) cacheInsertOrUpdate(table string) error {
