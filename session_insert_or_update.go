@@ -207,7 +207,7 @@ func (session *Session) innerInsertOrUpdateMulti(updateCols []string, rowsSliceP
 	cleanupProcessorsClosures(&session.beforeClosures)
 
 	if len(updateCols) > 0 {
-		updates = make([]string, len(updateCols))
+		updates = make([]string, 0)
 		for _, col := range updateCols  {
 			updates = append(updates, fmt.Sprintf("%s=values(%s)", col, col))
 		}
